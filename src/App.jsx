@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 
-const SUPABASE_URL = "https://wysitkxaevbuivjpdtigm.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5c2l0eGFldmJ1aXZqcGR0aWdtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4ODIwNjMsImV4cCI6MjA5MTQ1ODA2M30.v1kXOjf-rCDx_kzXwx6Ab7bchz4pwWWUkg4raebLaOs";
+const SUPABASE_URL = "https://szfwxjlwiyskswoqtytn.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6Znd4amx3aXlza3N3b3F0eXRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2NzI1MjAsImV4cCI6MjEwMDI0ODUyMH0.Je77dspoDsZqKWeMcBdjAXwLdVKnX2SwyTaVYZm4frs";
 const ADMIN_PASSWORD = "kazu1969";
 
 const api = async (method, body) => {
@@ -63,11 +63,27 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
+  const [fetchError, setFetchError] = useState(null);
+
   const fetchResources = async () => {
     setLoading(true);
-    const data = await api("GET");
-    setResources(Array.isArray(data) ? data : []);
-    setLoading(false);
+    setFetchError(null);
+    try {
+      const data = await api("GET");
+      if (!Array.isArray(data)) {
+        console.error("Unexpected response:", data);
+        setFetchError(typeof data === "object" ? JSON.stringify(data) : String(data));
+        setResources([]);
+      } else {
+        setResources(data);
+      }
+    } catch (err) {
+      console.error("Fetch error:", err);
+      setFetchError(err.message || String(err));
+      setResources([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchResources(); }, []);
@@ -192,6 +208,13 @@ export default function App() {
         {/* Resource list */}
         {loading ? (
           <div style={s.empty}>読み込み中...</div>
+        ) : fetchError ? (
+          <div style={{ ...s.empty, color: COLORS.danger }}>
+            エラーが発生しました：<br />{fetchError}
+            <div style={{ marginTop: "12px" }}>
+              <button style={s.editBtn} onClick={fetchResources}>再読み込み</button>
+            </div>
+          </div>
         ) : filtered.length === 0 ? (
           <div style={s.empty}>資料がありません</div>
         ) : (
