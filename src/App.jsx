@@ -62,6 +62,10 @@ export default function App() {
   const [form, setForm] = useState({ title: "", url: "", category: "", description: "" });
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkError, setBulkError] = useState(null);
 
   const [fetchError, setFetchError] = useState(null);
 
@@ -139,6 +143,48 @@ export default function App() {
     await fetchResources();
   };
 
+  const parseBulkLine = (line) => {
+    const parts = line.split("|").map(p => p.trim());
+    if (parts.length < 3) return null;
+    const [title, url, category, description] = parts;
+    if (!title || !url || !category) return null;
+    return { title, url, category, description: description || "" };
+  };
+
+  const handleBulkSave = async () => {
+    const lines = bulkText.split("\n").map(l => l.trim()).filter(Boolean);
+    const items = [];
+    const badLines = [];
+    lines.forEach((line, i) => {
+      const parsed = parseBulkLine(line);
+      if (parsed) items.push(parsed);
+      else badLines.push(i + 1);
+    });
+    if (items.length === 0) {
+      setBulkError("有効な行がありませんでした。「タイトル | URL | カテゴリ」の形式で入力してください。");
+      return;
+    }
+    setBulkSaving(true);
+    setBulkError(null);
+    try {
+      const result = await api("POST", items);
+      if (!Array.isArray(result)) {
+        setBulkError(typeof result === "object" ? JSON.stringify(result) : String(result));
+      } else {
+        await fetchResources();
+        setShowBulk(false);
+        setBulkText("");
+        if (badLines.length > 0) {
+          setBulkError(`${badLines.length}行は形式が不正のためスキップしました（${badLines.join(", ")}行目）`);
+        }
+      }
+    } catch (err) {
+      setBulkError(err.message || String(err));
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
   const s = {
     wrap: { minHeight: "100vh", background: COLORS.bg, color: COLORS.text, fontFamily: "'Noto Sans JP', 'Hiragino Sans', sans-serif", padding: "0 0 80px" },
     header: { background: COLORS.surface, borderBottom: `1px solid ${COLORS.border}`, padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 },
@@ -163,6 +209,9 @@ export default function App() {
     modalTitle: { fontSize: "18px", fontWeight: 700, marginBottom: "20px" },
     label: { fontSize: "13px", color: COLORS.muted, marginBottom: "6px", display: "block" },
     input: { width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "11px 14px", color: COLORS.text, fontSize: "15px", outline: "none", boxSizing: "border-box", marginBottom: "16px" },
+    textarea: { width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "11px 14px", color: COLORS.text, fontSize: "14px", outline: "none", boxSizing: "border-box", marginBottom: "12px", fontFamily: "monospace", resize: "vertical" },
+    bulkBtn: { background: "transparent", color: COLORS.accent, border: `1px solid ${COLORS.accent}`, borderRadius: "12px", padding: "12px 20px", fontSize: "14px", fontWeight: 600, cursor: "pointer", width: "100%", marginBottom: "20px", marginTop: "-12px" },
+    hint: { fontSize: "12px", color: COLORS.muted, marginBottom: "16px", lineHeight: 1.6 },
     saveBtn: { background: COLORS.accent, color: "#fff", border: "none", borderRadius: "12px", padding: "13px", fontSize: "15px", fontWeight: 600, cursor: "pointer", width: "100%", marginTop: "4px" },
     cancelBtn: { background: "transparent", color: COLORS.muted, border: `1px solid ${COLORS.border}`, borderRadius: "12px", padding: "13px", fontSize: "15px", cursor: "pointer", width: "100%", marginTop: "8px" },
     empty: { textAlign: "center", color: COLORS.muted, padding: "60px 0", fontSize: "15px" },
@@ -202,6 +251,11 @@ export default function App() {
         {isAdmin && (
           <button style={s.addBtn} onClick={openAdd}>
             ＋ 新しい資料を追加
+          </button>
+        )}
+        {isAdmin && (
+          <button style={s.bulkBtn} onClick={() => { setBulkText(""); setBulkError(null); setShowBulk(true); }}>
+            ＋ 複数まとめて追加
           </button>
         )}
 
@@ -281,6 +335,32 @@ export default function App() {
               {saving ? "保存中..." : "保存する"}
             </button>
             <button style={s.cancelBtn} onClick={() => setShowForm(false)}>キャンセル</button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk add modal */}
+      {showBulk && (
+        <div style={s.overlay} onClick={() => setShowBulk(false)}>
+          <div style={s.modal} onClick={e => e.stopPropagation()}>
+            <div style={s.modalTitle}>複数まとめて追加</div>
+            <div style={s.hint}>
+              1行に1件、以下の形式で入力してください（説明は省略可）：<br />
+              <strong>タイトル | URL | カテゴリ | 説明</strong><br />
+              例：支援計画シート | https://github.com/xxx/yyy | 就労支援・アセスメント | 面談時に使用
+            </div>
+            <textarea
+              style={s.textarea}
+              rows={10}
+              value={bulkText}
+              onChange={e => setBulkText(e.target.value)}
+              placeholder={"支援計画シート | https://github.com/xxx/yyy | 就労支援・アセスメント | 面談時に使用\n認知行動療法まとめ | https://github.com/xxx/zzz | 心理教育資料"}
+            />
+            {bulkError && <div style={{ color: COLORS.danger, fontSize: "13px", marginBottom: "12px" }}>{bulkError}</div>}
+            <button style={{ ...s.saveBtn, opacity: !bulkText.trim() ? 0.5 : 1 }} onClick={handleBulkSave} disabled={bulkSaving || !bulkText.trim()}>
+              {bulkSaving ? "登録中..." : "まとめて登録する"}
+            </button>
+            <button style={s.cancelBtn} onClick={() => setShowBulk(false)}>キャンセル</button>
           </div>
         </div>
       )}
